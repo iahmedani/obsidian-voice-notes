@@ -1,0 +1,10 @@
+{
+  "id": "voice-notes-local",
+  "name": "Voice Notes (Local Whisper)",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.0",
+  "description": "Record voice notes and meetings with local Whisper transcription, speaker identification, and AI-powered meeting summaries.",
+  "author": "Imran Khan Ahmedani",
+  "authorUrl": "https://github.com/iahmedani",
+  "isDesktopOnly": true
+}

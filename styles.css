@@ -1,0 +1,131 @@
+/* Voice Notes (Local Whisper) — Plugin Styles */
+
+/* Recording animation */
+.voice-notes-recording .svg-icon {
+  color: var(--text-error) !important;
+  animation: vnp 1.5s ease-in-out infinite;
+}
+
+@keyframes vnp {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.15); }
+}
+
+/* Modal */
+.vn-modal { max-width: 620px; padding: 24px; }
+.vn-title { text-align: center; margin-bottom: 8px; font-size: 1.3em; }
+.vn-status {
+  text-align: center; font-size: 0.9em; padding: 6px 12px;
+  border-radius: 16px; margin-bottom: 16px;
+  background: var(--background-secondary);
+}
+.vn-timer {
+  text-align: center; font-size: 2.2em; font-weight: 700;
+  font-family: monospace; margin: 8px 0; color: var(--text-accent);
+}
+.vn-ctrl {
+  display: flex; justify-content: center; gap: 12px;
+  margin: 16px 0; flex-wrap: wrap;
+}
+.vn-btn {
+  padding: 10px 24px; border-radius: 10px; font-size: 0.95em;
+  font-weight: 600; cursor: pointer; border: none;
+  transition: all 0.15s ease;
+}
+.vn-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px var(--background-modifier-box-shadow);
+}
+.vn-rec { background: var(--text-error); color: var(--text-on-accent); }
+.vn-stop { background: var(--text-muted); color: var(--text-on-accent); }
+.vn-save { background: var(--text-success); color: var(--text-on-accent); }
+.vn-ai { background: var(--interactive-accent); color: var(--text-on-accent); }
+
+/* Transcript box */
+.vn-tx {
+  min-height: 140px; max-height: 320px; overflow-y: auto;
+  padding: 14px 18px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px; background: var(--background-secondary);
+  font-size: 0.95em; line-height: 1.7; white-space: pre-wrap;
+}
+.vn-ed { border-color: var(--interactive-accent); }
+.vn-ed:focus {
+  box-shadow: 0 0 0 2px var(--interactive-accent); outline: none;
+}
+
+/* Meeting toast */
+.vn-meeting-toast {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+  z-index: 10000; display: flex; align-items: center; gap: 10px;
+  padding: 12px 20px; background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px var(--background-modifier-box-shadow);
+  font-size: 0.95em; animation: vnToastIn 0.3s ease;
+}
+.vn-toast-icon { font-size: 1.3em; }
+.vn-toast-msg { flex: 1; font-weight: 500; }
+.vn-toast-btn {
+  padding: 6px 16px; border: none; border-radius: 8px;
+  font-weight: 600; cursor: pointer; font-size: 0.9em;
+  transition: all 0.15s;
+}
+.vn-toast-yes { background: var(--text-success); color: var(--text-on-accent); }
+.vn-toast-yes:hover { filter: brightness(0.9); transform: translateY(-1px); }
+.vn-toast-no { background: var(--background-secondary); color: var(--text-normal); }
+.vn-toast-no:hover { background: var(--background-modifier-hover); }
+.vn-toast-timer {
+  font-size: 0.8em; color: var(--text-muted);
+  min-width: 24px; text-align: right;
+}
+@keyframes vnToastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* Meeting confirm modal info box */
+.vn-meeting-info {
+  background: var(--background-secondary); padding: 14px 18px;
+  border-radius: 10px; margin-bottom: 16px;
+}
+.vn-meeting-app { font-weight: 600; font-size: 1.05em; margin-bottom: 4px; }
+.vn-meeting-audio { font-size: 0.9em; color: var(--text-muted); }
+.vn-meeting-warn {
+  font-size: 0.85em; color: var(--text-warning);
+  margin-top: 8px; font-style: italic;
+}
+
+/* Meeting sidebar */
+.vn-sidebar {
+  padding: 16px; display: flex; flex-direction: column; height: 100%;
+}
+.vn-sb-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.vn-sb-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--text-error);
+  animation: vnp 1.5s ease-in-out infinite;
+}
+.vn-sb-app { font-weight: 600; flex: 1; }
+.vn-sb-timer {
+  font-family: monospace; font-size: 1.1em;
+  font-weight: 700; color: var(--text-accent);
+}
+.vn-sb-status {
+  font-size: 0.85em; color: var(--text-muted); margin-bottom: 8px;
+}
+.vn-sb-transcript {
+  flex: 1; overflow-y: auto; padding: 12px;
+  background: var(--background-secondary); border-radius: 8px;
+  font-size: 0.9em; line-height: 1.6; white-space: pre-wrap;
+  margin-bottom: 12px; min-height: 200px;
+}
+.vn-sb-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+.vn-sb-moment {
+  color: var(--text-accent); font-weight: 600;
+  margin: 8px 0; text-align: center;
+}
