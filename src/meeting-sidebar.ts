@@ -36,7 +36,7 @@ export class MeetingSidebar extends ItemView {
     this.onMarkMoment = cbs.onMarkMoment;
   }
 
-  async onOpen() {
+  onOpen(): Promise<void> {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass("vn-sidebar");
@@ -75,6 +75,7 @@ export class MeetingSidebar extends ItemView {
     stopBtn.addEventListener("click", () => {
       if (this.onStop) this.onStop();
     });
+    return Promise.resolve();
   }
 
   startRecording(appName: string | null, captureMethod: string) {
@@ -152,10 +153,11 @@ export class MeetingSidebar extends ItemView {
     }
   }
 
-  async onClose() {
+  onClose(): Promise<void> {
     if (this.timerInterval) {
       clearInterval(this.timerInterval);
       this.timerInterval = null;
     }
+    return Promise.resolve();
   }
 }
