@@ -17,11 +17,11 @@ export class MeetingConfirmModal extends Modal {
     this.config = {...config};
   }
 
-  open(): Promise<MeetingConfig | null> {
+  openAndWait(): Promise<MeetingConfig | null> {
     return new Promise((resolve) => {
       this.onStart = (cfg) => resolve(cfg);
       this.onCancel = () => resolve(null);
-      super.open();
+      this.open();
     });
   }
 
@@ -38,8 +38,8 @@ export class MeetingConfirmModal extends Modal {
 
     const methodLabels: Record<string, string> = {
       auto: "System audio (auto-detect)",
-      screencapturekit: "System audio (ScreenCaptureKit)",
-      blackhole: "System audio (BlackHole)",
+      screencapturekit: "System audio (screen capture)",
+      blackhole: "System audio (blackhole)",
       "mic-only": "Microphone only",
     };
     infoDiv.createEl("div", {
@@ -49,7 +49,7 @@ export class MeetingConfirmModal extends Modal {
 
     if (this.config.captureMethod === "mic-only") {
       infoDiv.createEl("div", {
-        text: "Note: Only your microphone will be captured. Other participants won't be transcribed.",
+        text: "Note: only your microphone will be captured. Other participants won't be transcribed.",
         cls: "vn-meeting-warn",
       });
     }

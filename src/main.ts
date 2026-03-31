@@ -48,7 +48,7 @@ export default class VoiceNotesPlugin extends Plugin {
     this.addCommand({id:"toggle-dictation",name:"Toggle dictation (voice to cursor)",callback:()=>{void this.toggle()}});
     this.addCommand({id:"record-voice-note",name:"Record full voice note (modal)",callback:()=>{new RecModal(this.app,this).open()}});
     this.addCommand({id:"summarize-selection",name:"Generate meeting notes from selection",callback:()=>{void this.sumSel()}});
-    this.addCommand({id:"check-server",name:"Check Whisper server status",callback:()=>{void this.chk()}});
+    this.addCommand({id:"check-server",name:"Check server status",callback:()=>{void this.chk()}});
     this.addSettingTab(new VNSettingsTab(this.app,this));
     // Meeting mode
     this.registerView(MEETING_SIDEBAR_TYPE, (leaf) => new MeetingSidebar(leaf));
@@ -228,7 +228,7 @@ export default class VoiceNotesPlugin extends Plugin {
       appName,captureMethod:captureLabel,
       diarize:this.settings.diarizeEnabled,postAction:this.settings.meetingPostAction,
     });
-    const config=await modal.open();
+    const config=await modal.openAndWait();
     if(!config)return;
     await this.launchMeeting(config,appName);
   }
@@ -251,7 +251,7 @@ export default class VoiceNotesPlugin extends Plugin {
       diarize:this.settings.diarizeEnabled,
       postAction:this.settings.meetingPostAction,
     });
-    const config=await modal.open();
+    const config=await modal.openAndWait();
     if(!config)return;
     await this.launchMeeting(config,detection.appName);
   }
@@ -272,7 +272,7 @@ export default class VoiceNotesPlugin extends Plugin {
       const leaf=this.app.workspace.getRightLeaf(false);
       if(leaf){
         await leaf.setViewState({type:MEETING_SIDEBAR_TYPE,active:true});
-        this.app.workspace.revealLeaf(leaf);
+        void this.app.workspace.revealLeaf(leaf);
         const view=leaf.view;
         if(view instanceof MeetingSidebar){
           view.setCallbacks({
@@ -480,17 +480,17 @@ class VNSettingsTab extends PluginSettingTab {
     const c=this.containerEl;c.empty();
     new Setting(c).setName("Whisper server").setHeading();
     new Setting(c).setName("Server URL").addText(t=>t.setValue(this.pl.settings.serverUrl).onChange(async v=>{this.pl.settings.serverUrl=v;await this.pl.saveSettings()}));
-    new Setting(c).setName("Whisper model").addDropdown(d=>d.addOption("mlx-community/whisper-tiny","Tiny").addOption("mlx-community/whisper-base","Base").addOption("mlx-community/whisper-small","Small").addOption("mlx-community/whisper-medium","Medium").addOption("mlx-community/whisper-large-v3-turbo","Large v3 Turbo (recommended)").addOption("mlx-community/distil-whisper-large-v3","Distil Large v3").setValue(this.pl.settings.whisperModel).onChange(async v=>{this.pl.settings.whisperModel=v;await this.pl.saveSettings()}));
+    new Setting(c).setName("Whisper model").addDropdown(d=>d.addOption("mlx-community/whisper-tiny","Tiny").addOption("mlx-community/whisper-base","Base").addOption("mlx-community/whisper-small","Small").addOption("mlx-community/whisper-medium","Medium").addOption("mlx-community/whisper-large-v3-turbo","Large v3 turbo (recommended)").addOption("mlx-community/distil-whisper-large-v3","Distil large v3").setValue(this.pl.settings.whisperModel).onChange(async v=>{this.pl.settings.whisperModel=v;await this.pl.saveSettings()}));
     new Setting(c).setName("Language").addDropdown(d=>d.addOption("en","English").addOption("auto","Auto-detect").addOption("ps","Pashto").addOption("prs","Dari").addOption("ar","Arabic").addOption("ur","Urdu").addOption("fr","French").addOption("de","German").addOption("es","Spanish").addOption("hi","Hindi").addOption("zh","Chinese").setValue(this.pl.settings.language).onChange(async v=>{this.pl.settings.language=v;await this.pl.saveSettings()}));
-    new Setting(c).setName("Translate to English").setDesc("Translate non-English speech to English via AI. Requires AI summarization enabled. Original transcript preserved in callout.").addToggle(t=>t.setValue(this.pl.settings.translateToEnglish).onChange(async v=>{this.pl.settings.translateToEnglish=v;await this.pl.saveSettings()}));
+    new Setting(c).setName("Translate to english").setDesc("Translate non-english audio to english via AI. Requires AI summarization enabled. Original transcript preserved in callout.").addToggle(t=>t.setValue(this.pl.settings.translateToEnglish).onChange(async v=>{this.pl.settings.translateToEnglish=v;await this.pl.saveSettings()}));
 
     new Setting(c).setName("Dictation").setHeading();
     new Setting(c).setName("Chunk interval (seconds)").setDesc("Lower = faster, higher = more accurate").addSlider(s=>s.setLimits(3,15,1).setValue(this.pl.settings.chunkSeconds).setDynamicTooltip().onChange(async v=>{this.pl.settings.chunkSeconds=v;await this.pl.saveSettings()}));
     new Setting(c).setName("Notes folder").addText(t=>t.setValue(this.pl.settings.notesFolder).onChange(async v=>{this.pl.settings.notesFolder=v;await this.pl.saveSettings()}));
-    new Setting(c).setName("Audio folder").setDesc("Where WAV recordings are saved").addText(t=>t.setValue(this.pl.settings.audioFolder).onChange(async v=>{this.pl.settings.audioFolder=v;await this.pl.saveSettings()}));
+    new Setting(c).setName("Audio folder").setDesc("Where audio recordings are saved").addText(t=>t.setValue(this.pl.settings.audioFolder).onChange(async v=>{this.pl.settings.audioFolder=v;await this.pl.saveSettings()}));
 
     new Setting(c).setName("Speaker diarization").setHeading();
-    new Setting(c).setName("Enable speaker diarization").setDesc("Identify who spoke when (full recordings only, not live dictation). Requires pyannote + HuggingFace token on server.")
+    new Setting(c).setName("Enable speaker diarization").setDesc("Identify who spoke when (full recordings only, not live dictation). Requires pyannote and huggingface token on server.")
       .addToggle(t=>t.setValue(this.pl.settings.diarizeEnabled).onChange(async v=>{this.pl.settings.diarizeEnabled=v;await this.pl.saveSettings();this.display();}));
     if(this.pl.settings.diarizeEnabled){
       new Setting(c).setName("Number of speakers").setDesc("0 = auto-detect (recommended). Set a number if you know exactly how many speakers.")
@@ -501,19 +501,19 @@ class VNSettingsTab extends PluginSettingTab {
     new Setting(c).setName("Enable AI summarization").setDesc("Generate meeting notes from transcripts").addToggle(t=>t.setValue(this.pl.settings.aiEnabled).onChange(async v=>{this.pl.settings.aiEnabled=v;await this.pl.saveSettings();this.display()}));
 
     if(this.pl.settings.aiEnabled){
-      new Setting(c).setName("Provider").addDropdown(d=>d.addOption("anthropic","Anthropic (Claude)").addOption("openai","OpenAI (GPT)").addOption("ollama","Ollama (Local)").setValue(this.pl.settings.aiProvider).onChange(async v=>{this.pl.settings.aiProvider=v;await this.pl.saveSettings();this.display()}));
+      new Setting(c).setName("Provider").addDropdown(d=>d.addOption("anthropic","Anthropic").addOption("openai","Open AI").addOption("ollama","Ollama (local)").setValue(this.pl.settings.aiProvider).onChange(async v=>{this.pl.settings.aiProvider=v;await this.pl.saveSettings();this.display()}));
 
       if(this.pl.settings.aiProvider==="anthropic"){
         new Setting(c).setName("API key").addText(t=>{t.inputEl.type="password";t.setValue(this.pl.settings.aiApiKey).onChange(async v=>{this.pl.settings.aiApiKey=v;await this.pl.saveSettings()})});
-        new Setting(c).setName("Model").setDesc("e.g. claude-sonnet-4-20250514").addText(t=>t.setPlaceholder("claude-sonnet-4-20250514").setValue(this.pl.settings.aiModel).onChange(async v=>{this.pl.settings.aiModel=v;await this.pl.saveSettings()}));
+        new Setting(c).setName("Model").setDesc("Claude model ID").addText(t=>t.setPlaceholder("Model name").setValue(this.pl.settings.aiModel).onChange(async v=>{this.pl.settings.aiModel=v;await this.pl.saveSettings()}));
         new Setting(c).setName("Base URL").setDesc("Default: https://api.anthropic.com (change for proxies or custom endpoints)").addText(t=>t.setPlaceholder("https://api.anthropic.com").setValue(this.pl.settings.aiBaseUrl).onChange(async v=>{this.pl.settings.aiBaseUrl=v;await this.pl.saveSettings()}));
       } else if(this.pl.settings.aiProvider==="openai"){
         new Setting(c).setName("API key").addText(t=>{t.inputEl.type="password";t.setValue(this.pl.settings.aiApiKey).onChange(async v=>{this.pl.settings.aiApiKey=v;await this.pl.saveSettings()})});
-        new Setting(c).setName("Model").setDesc("e.g. gpt-4o").addText(t=>t.setPlaceholder("gpt-4o").setValue(this.pl.settings.aiModel).onChange(async v=>{this.pl.settings.aiModel=v;await this.pl.saveSettings()}));
+        new Setting(c).setName("Model").setDesc("Model ID").addText(t=>t.setPlaceholder("Model name").setValue(this.pl.settings.aiModel).onChange(async v=>{this.pl.settings.aiModel=v;await this.pl.saveSettings()}));
         new Setting(c).setName("Base URL").setDesc("Optional, for custom endpoints").addText(t=>t.setPlaceholder("https://api.openai.com").setValue(this.pl.settings.aiBaseUrl).onChange(async v=>{this.pl.settings.aiBaseUrl=v;await this.pl.saveSettings()}));
       } else if(this.pl.settings.aiProvider==="ollama"){
         new Setting(c).setName("Ollama URL").addText(t=>t.setPlaceholder("http://127.0.0.1:11434").setValue(this.pl.settings.aiBaseUrl).onChange(async v=>{this.pl.settings.aiBaseUrl=v;await this.pl.saveSettings()}));
-        new Setting(c).setName("Model").setDesc("e.g. llama3.2, mistral").addText(t=>t.setPlaceholder("llama3.2").setValue(this.pl.settings.aiModel).onChange(async v=>{this.pl.settings.aiModel=v;await this.pl.saveSettings()}));
+        new Setting(c).setName("Model").setDesc("Model ID").addText(t=>t.setPlaceholder("Model name").setValue(this.pl.settings.aiModel).onChange(async v=>{this.pl.settings.aiModel=v;await this.pl.saveSettings()}));
       }
       new Setting(c).setName("Custom prompt").setDesc("Override default. Use {transcript} as placeholder.").addTextArea(t=>{t.inputEl.rows=4;t.inputEl.addClass("vn-textarea-full");t.setPlaceholder("Leave empty for default").setValue(this.pl.settings.aiCustomPrompt).onChange(async v=>{this.pl.settings.aiCustomPrompt=v;await this.pl.saveSettings()})});
     }
@@ -526,11 +526,11 @@ class VNSettingsTab extends PluginSettingTab {
       .addToggle(t=>t.setValue(this.pl.settings.meetingEnabled).onChange(async v=>{this.pl.settings.meetingEnabled=v;await this.pl.saveSettings();this.display()}));
 
     if(this.pl.settings.meetingEnabled){
-      new Setting(c).setName("Audio capture method").setDesc("Auto tries ScreenCaptureKit first, then BlackHole, then mic-only")
-        .addDropdown(d=>d.addOption("auto","Auto-detect").addOption("screencapturekit","ScreenCaptureKit (macOS 14+)").addOption("blackhole","BlackHole").setValue(this.pl.settings.audioCaptureMethod)
+      new Setting(c).setName("Audio capture method").setDesc("Automatically selects the best available capture method")
+        .addDropdown(d=>d.addOption("auto","Auto-detect").addOption("screencapturekit","Screen capture (macOS 14+)").addOption("blackhole","Blackhole").setValue(this.pl.settings.audioCaptureMethod)
           .onChange(async v=>{this.pl.settings.audioCaptureMethod=v;await this.pl.saveSettings()}));
 
-      new Setting(c).setName("BlackHole device name").setDesc("Name of BlackHole virtual audio device")
+      new Setting(c).setName("Blackhole device name").setDesc("Name of blackhole virtual audio device")
         .addText(t=>t.setValue(this.pl.settings.blackholeDeviceName).onChange(async v=>{this.pl.settings.blackholeDeviceName=v;await this.pl.saveSettings()}));
 
       new Setting(c).setName("After meeting").setDesc("What to generate when meeting ends")
@@ -543,8 +543,8 @@ class VNSettingsTab extends PluginSettingTab {
       new Setting(c).setName("Auto-open sidebar").setDesc("Open live transcript panel when meeting starts")
         .addToggle(t=>t.setValue(this.pl.settings.autoOpenSidebar).onChange(async v=>{this.pl.settings.autoOpenSidebar=v;await this.pl.saveSettings()}));
 
-      new Setting(c).setName("Custom meeting apps").setDesc("Comma-separated extra app names to detect (e.g. Lark,Gather)")
-        .addText(t=>t.setPlaceholder("Lark,Gather").setValue(this.pl.settings.meetingApps).onChange(async v=>{this.pl.settings.meetingApps=v;await this.pl.saveSettings()}));
+      new Setting(c).setName("Custom meeting apps").setDesc("Comma-separated extra app names to detect")
+        .addText(t=>t.setPlaceholder("Slack,Discord").setValue(this.pl.settings.meetingApps).onChange(async v=>{this.pl.settings.meetingApps=v;await this.pl.saveSettings()}));
 
       const statusDiv=c.createEl("div",{cls:"vn-meeting-info"});
       statusDiv.setText("Checking audio capture...");
@@ -559,14 +559,13 @@ class VNSettingsTab extends PluginSettingTab {
         statusDiv.addClass("vn-preline");
       }).catch(()=>{});
 
-      let testTimer:number|null=null;
       new Setting(c).setName("Test system audio").addButton(b=>b.setButtonText("Test capture").onClick(async()=>{
         const pd=this.pl.getPluginDir();
         const cap=new SystemAudioCapture({onPCMData:()=>{},onError:(e)=>new Notice("Error: "+e),onReady:()=>{}},getWorkletUrl(),pd);
         try{
           const method=await cap.start(this.pl.settings.audioCaptureMethod,this.pl.settings.blackholeDeviceName);
           new Notice("Capture works! Method: "+method);
-          testTimer=window.setTimeout(()=>{void cap.stop();testTimer=null},1000);
+          window.setTimeout(()=>{void cap.stop()},1000);
         }catch(e){new Notice("Capture failed: "+e)}
       }));
     }
