@@ -1,4 +1,7 @@
 import {Platform} from "obsidian";
+import {spawn, execSync} from "child_process";
+import * as path from "path";
+import * as fs from "fs";
 
 const SR = 16000;
 
@@ -12,9 +15,11 @@ interface AudioCaptureCallbacks {
   onReady: () => void;
 }
 
+import type {ChildProcess} from "child_process";
+
 export class SystemAudioCapture {
   private method: CaptureMethod = "mic-only";
-  private childProcess: any = null;
+  private childProcess: ChildProcess | null = null;
   private stream: MediaStream | null = null;
   private micStream: MediaStream | null = null;
   private actx: AudioContext | null = null;
@@ -47,12 +52,8 @@ export class SystemAudioCapture {
     if (!Platform.isMacOS) return false;
 
     try {
-      const {spawn} = require("child_process") as typeof import("child_process");
-      const path = require("path") as typeof import("path");
-      const fs = require("fs") as typeof import("fs");
-
       const possiblePaths = [
-        path.join((this as any).pluginDir || "", "vn-audio-capture"),
+        path.join(this.pluginDir || "", "vn-audio-capture"),
         path.join(process.env.HOME || "", ".voice-notes-whisper", "vn-audio-capture"),
       ];
 
@@ -121,7 +122,6 @@ export class SystemAudioCapture {
               this.running = true;
 
               let leftover = Buffer.alloc(0);
-              let totalBytes = 0;
               child.stdout.on("data", (chunk: Buffer) => {
                 const combined = Buffer.concat([leftover, chunk]);
                 const alignedLen = Math.floor(combined.length / 4) * 4;
@@ -130,7 +130,6 @@ export class SystemAudioCapture {
                   const view = new Uint8Array(ab);
                   view.set(combined.subarray(0, alignedLen));
                   const sysAudio = new Float32Array(ab);
-                  totalBytes += alignedLen;
 
                   // Emit raw system audio for diarization
                   if (this.callbacks.onSystemData) this.callbacks.onSystemData(sysAudio);
@@ -290,7 +289,6 @@ export class SystemAudioCapture {
 
     if (Platform.isMacOS) {
       try {
-        const {execSync} = require("child_process") as typeof import("child_process");
         const ver = execSync("sw_vers -productVersion", {timeout: 2000}).toString().trim();
         const major = parseInt(ver.split(".")[0]);
         sck = major >= 14;

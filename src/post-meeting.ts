@@ -1,4 +1,4 @@
-import {App, TFile, requestUrl} from "obsidian";
+import {App, moment, requestUrl} from "obsidian";
 import {MeetingMoment} from "./meeting-sidebar";
 import {mergePCM, f32ToB64, pcmToWav, ensureFolder} from "./audio-utils";
 
@@ -117,7 +117,7 @@ export async function processPostMeeting(
   input: PostMeetingInput,
   onStatus: (msg: string) => void
 ): Promise<string> {
-  const now = (window as any).moment();
+  const now = moment();
   const ds = now.format("YYYY-MM-DD");
   const ts = now.format("HH-mm-ss");
   const dd = now.format("dddd, Do MMMM YYYY HH:mm");
@@ -133,7 +133,7 @@ export async function processPostMeeting(
   await ensureFolder(app, af);
   const merged = mergePCM(input.pcmBuffers);
   const wavBuf = pcmToWav(merged, SR);
-  await app.vault.adapter.writeBinary(ap, new Uint8Array(wavBuf) as any);
+  await app.vault.adapter.writeBinary(ap, wavBuf);
 
   // Diarization: stereo-based (instant) if we have separate streams, else server-based
   let finalTranscript = input.transcript;

@@ -29,7 +29,7 @@ export class MeetingConfirmModal extends Modal {
     const c = this.contentEl;
     c.empty();
     c.addClass("vn-modal");
-    c.createEl("h2", {text: "Start Meeting Transcription", cls: "vn-title"});
+    c.createEl("h2", {text: "Start meeting transcription", cls: "vn-title"});
 
     const infoDiv = c.createEl("div", {cls: "vn-meeting-info"});
     if (this.config.appName) {
@@ -37,10 +37,10 @@ export class MeetingConfirmModal extends Modal {
     }
 
     const methodLabels: Record<string, string> = {
-      auto: "System Audio (Auto-detect)",
-      screencapturekit: "System Audio (ScreenCaptureKit)",
-      blackhole: "System Audio (BlackHole)",
-      "mic-only": "Microphone Only",
+      auto: "System audio (auto-detect)",
+      screencapturekit: "System audio (ScreenCaptureKit)",
+      blackhole: "System audio (BlackHole)",
+      "mic-only": "Microphone only",
     };
     infoDiv.createEl("div", {
       text: `Audio: ${methodLabels[this.config.captureMethod] || this.config.captureMethod}`,
@@ -70,7 +70,7 @@ export class MeetingConfirmModal extends Modal {
       );
 
     const btnRow = c.createEl("div", {cls: "vn-ctrl"});
-    const startBtn = btnRow.createEl("button", {cls: "vn-btn vn-rec", text: "Start Transcribing"});
+    const startBtn = btnRow.createEl("button", {cls: "vn-btn vn-rec", text: "Start transcribing"});
     startBtn.addEventListener("click", () => {
       // Grab callback before close() triggers onClose() which nulls it
       const cb = this.onStart;

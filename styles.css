@@ -129,3 +129,8 @@
   color: var(--text-accent); font-weight: 600;
   margin: 8px 0; text-align: center;
 }
+
+/* Utility classes */
+.vn-hidden { display: none !important; }
+.vn-textarea-full { width: 100%; }
+.vn-preline { white-space: pre-line; }

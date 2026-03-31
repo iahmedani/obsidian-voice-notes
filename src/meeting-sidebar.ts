@@ -1,4 +1,4 @@
-import {ItemView, WorkspaceLeaf} from "obsidian";
+import {ItemView} from "obsidian";
 
 export const MEETING_SIDEBAR_TYPE = "vn-meeting-sidebar";
 
@@ -26,7 +26,7 @@ export class MeetingSidebar extends ItemView {
   private onMarkMoment: (() => void) | null = null;
 
   getViewType() { return MEETING_SIDEBAR_TYPE; }
-  getDisplayText() { return "Meeting Transcription"; }
+  getDisplayText() { return "Meeting transcription"; }
   getIcon() { return "phone"; }
 
   setCallbacks(cbs: {onStop: () => void; onPause: () => void; onResume: () => void; onMarkMoment: () => void}) {
@@ -66,12 +66,12 @@ export class MeetingSidebar extends ItemView {
       }
     });
 
-    const momentBtn = this.controlsEl.createEl("button", {cls: "vn-btn vn-ai", text: "Mark Moment"});
+    const momentBtn = this.controlsEl.createEl("button", {cls: "vn-btn vn-ai", text: "Mark moment"});
     momentBtn.addEventListener("click", () => {
       if (this.onMarkMoment) this.onMarkMoment();
     });
 
-    const stopBtn = this.controlsEl.createEl("button", {cls: "vn-btn vn-rec", text: "Stop Meeting"});
+    const stopBtn = this.controlsEl.createEl("button", {cls: "vn-btn vn-rec", text: "Stop meeting"});
     stopBtn.addEventListener("click", () => {
       if (this.onStop) this.onStop();
     });
@@ -88,9 +88,9 @@ export class MeetingSidebar extends ItemView {
     if (appEl) appEl.textContent = appName || "Meeting";
 
     const methodLabels: Record<string, string> = {
-      screencapturekit: "System Audio",
+      screencapturekit: "System audio",
       blackhole: "BlackHole",
-      "mic-only": "Mic Only",
+      "mic-only": "Mic only",
     };
     this.statusEl?.setText(`Recording — ${methodLabels[captureMethod] || captureMethod}`);
     this.transcriptEl?.setText("Waiting for speech...");
@@ -145,9 +145,9 @@ export class MeetingSidebar extends ItemView {
     if (this.statusEl) this.statusEl.setText("Done!");
     if (this.controlsEl) {
       this.controlsEl.empty();
-      const link = this.controlsEl.createEl("button", {cls: "vn-btn vn-save", text: "Open Meeting Note"});
+      const link = this.controlsEl.createEl("button", {cls: "vn-btn vn-save", text: "Open meeting note"});
       link.addEventListener("click", () => {
-        this.app.workspace.openLinkText(notePath, "", true);
+        void this.app.workspace.openLinkText(notePath, "", true);
       });
     }
   }

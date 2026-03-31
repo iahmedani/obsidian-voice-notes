@@ -26,37 +26,40 @@ export default class VoiceNotesPlugin extends Plugin {
   private chunkSeq=0;private chunkResults:Map<number,string|null>=new Map();private nextFlush=0;private fullTranscript:string[]=[];private originalTranscript:string[]=[];private detectedLang="en";
   private meetingActive=false;private meetingCapture:SystemAudioCapture|null=null;
   private meetingPcm:Float32Array[]=[];private meetingMicPcm:Float32Array[]=[];private meetingSysPcm:Float32Array[]=[];private meetingPending:Float32Array[]=[];
-  private meetingCI:number|null=null;private meetingSidebar:MeetingSidebar|null=null;
+  private meetingCI:number|null=null;
   private meetingChunkSeq=0;private meetingChunkResults:Map<number,string|null>=new Map();
   private meetingNextFlush=0;private meetingTexts:string[]=[];private meetingT0=0;
   private meetingAppName:string|null=null;private meetingMethod:CaptureMethod="mic-only";
   private meetingConfig:MeetingConfig|null=null;private meetingPaused=false;
   private meetingPollInterval:number|null=null;private lastDetectedApp:string|null=null;private toastShowing=false;
 
+  private getMeetingSidebarView():MeetingSidebar|null{
+    const leaves=this.app.workspace.getLeavesOfType(MEETING_SIDEBAR_TYPE);
+    for(const l of leaves){if(l.view instanceof MeetingSidebar)return l.view}
+    return null;
+  }
+
   async onload(){
     await this.loadSettings();
-    this.rib=this.addRibbonIcon("mic","Toggle dictation",()=>this.toggle());
+    this.rib=this.addRibbonIcon("mic","Toggle dictation",()=>{void this.toggle()});
     this.sbar=this.addStatusBarItem();this.sbar.setText("");
-    this.addCommand({id:"toggle-dictation",name:"Toggle dictation (voice to cursor)",callback:()=>this.toggle()});
-    this.addCommand({id:"record-voice-note",name:"Record full voice note (modal)",callback:()=>new RecModal(this.app,this).open()});
-    this.addCommand({id:"summarize-selection",name:"Generate meeting notes from selection",callback:()=>this.sumSel()});
-    this.addCommand({id:"check-server",name:"Check Whisper server status",callback:()=>this.chk()});
+    this.addCommand({id:"toggle-dictation",name:"Toggle dictation (voice to cursor)",callback:()=>{void this.toggle()}});
+    this.addCommand({id:"record-voice-note",name:"Record full voice note (modal)",callback:()=>{new RecModal(this.app,this).open()}});
+    this.addCommand({id:"summarize-selection",name:"Generate meeting notes from selection",callback:()=>{void this.sumSel()}});
+    this.addCommand({id:"check-server",name:"Check Whisper server status",callback:()=>{void this.chk()}});
     this.addSettingTab(new VNSettingsTab(this.app,this));
     // Meeting mode
-    this.registerView(MEETING_SIDEBAR_TYPE, (leaf) => {
-      this.meetingSidebar = new MeetingSidebar(leaf);
-      return this.meetingSidebar;
-    });
-    this.addCommand({id:"start-meeting",name:"Start meeting transcription",callback:()=>this.startMeeting()});
-    this.addCommand({id:"stop-meeting",name:"Stop meeting transcription",callback:()=>this.stopMeeting()});
-    this.addCommand({id:"mark-moment",name:"Mark moment in meeting",callback:()=>{if(this.meetingSidebar&&this.meetingActive)this.meetingSidebar.addMomentMarker()}});
+    this.registerView(MEETING_SIDEBAR_TYPE, (leaf) => new MeetingSidebar(leaf));
+    this.addCommand({id:"start-meeting",name:"Start meeting transcription",callback:()=>{void this.startMeeting()}});
+    this.addCommand({id:"stop-meeting",name:"Stop meeting transcription",callback:()=>{void this.stopMeeting()}});
+    this.addCommand({id:"mark-moment",name:"Mark moment in meeting",callback:()=>{const sb=this.getMeetingSidebarView();if(sb&&this.meetingActive)sb.addMomentMarker()}});
     if(this.settings.meetingEnabled){
-      this.addRibbonIcon("phone","Start meeting transcription",()=>this.startMeeting());
+      this.addRibbonIcon("phone","Start meeting transcription",()=>{void this.startMeeting()});
       // Start background polling for active calls (every 30 seconds)
       this.startMeetingPoll();
     }
   }
-  onunload(){if(this.isRec)this.stop();if(this.meetingActive)this.stopMeeting();this.stopMeetingPoll()}
+  onunload(){if(this.isRec)void this.stop();if(this.meetingActive)void this.stopMeeting();this.stopMeetingPoll()}
   async loadSettings(){this.settings=Object.assign({},DEFAULTS,await this.loadData())}
   async saveSettings(){await this.saveData(this.settings)}
 
@@ -89,7 +92,7 @@ export default class VoiceNotesPlugin extends Plugin {
     while(this.chunkResults.size>0&&Date.now()-waitStart<5000){await new Promise(r=>setTimeout(r,100))}
     this.flushChunks();
     if(this.workletNode){this.workletNode.disconnect();this.workletNode=null}
-    if(this.actx){this.actx.close();this.actx=null}
+    if(this.actx){void this.actx.close();this.actx=null}
     if(this.stream){this.stream.getTracks().forEach(t=>t.stop());this.stream=null}
     this.isRec=false;this.ui(false);
     const el=Math.floor((Date.now()-this.t0)/1000);
@@ -100,7 +103,7 @@ export default class VoiceNotesPlugin extends Plugin {
       const af=this.settings.audioFolder;const afn=`voice-dictation-${ds}-${ts}.wav`;const ap=`${af}/${afn}`;
       await ensureFolder(this.app,af);
       const merged=mergePCM(this.pcm);const wavBuf=pcmToWav(merged,SR);
-      await this.app.vault.adapter.writeBinary(ap,new Uint8Array(wavBuf) as any);
+      await this.app.vault.adapter.writeBinary(ap,wavBuf);
       const transcript=this.fullTranscript.join(" ").trim();
       const original=this.originalTranscript.join(" ").trim();
       const isTranslated=this.settings.translateToEnglish&&this.settings.aiEnabled&&this.detectedLang!=="en"&&original!==transcript;
@@ -136,7 +139,7 @@ export default class VoiceNotesPlugin extends Plugin {
       if(t){
         this.originalTranscript.push(t);
         if(this.settings.translateToEnglish&&this.settings.aiEnabled&&this.detectedLang!=="en"){
-          this.translate(t,this.detectedLang).then(tr=>{this.fullTranscript.push(tr);this.ins(tr)});
+          this.translate(t,this.detectedLang).then(tr=>{this.fullTranscript.push(tr);this.ins(tr)}).catch(()=>{});
         }else{
           this.fullTranscript.push(t);this.ins(t);
         }
@@ -198,9 +201,9 @@ export default class VoiceNotesPlugin extends Plugin {
 
   private startMeetingPoll(){
     this.stopMeetingPoll();
-    this.meetingPollInterval=window.setInterval(()=>this.pollForMeeting(),30000);
+    this.meetingPollInterval=window.setInterval(()=>{void this.pollForMeeting()},30000);
     // Also do an immediate check after 5 seconds (give Obsidian time to fully load)
-    window.setTimeout(()=>this.pollForMeeting(),5000);
+    window.setTimeout(()=>{void this.pollForMeeting()},5000);
   }
   private stopMeetingPoll(){
     if(this.meetingPollInterval){clearInterval(this.meetingPollInterval);this.meetingPollInterval=null}
@@ -286,19 +289,18 @@ export default class VoiceNotesPlugin extends Plugin {
         this.app.workspace.revealLeaf(leaf);
         const view=leaf.view;
         if(view instanceof MeetingSidebar){
-          this.meetingSidebar=view;
-          this.meetingSidebar.setCallbacks({
-            onStop:()=>this.stopMeeting(),
+          view.setCallbacks({
+            onStop:()=>{void this.stopMeeting()},
             onPause:()=>{this.meetingPaused=true},
             onResume:()=>{this.meetingPaused=false},
-            onMarkMoment:()=>{if(this.meetingSidebar)this.meetingSidebar.addMomentMarker()},
+            onMarkMoment:()=>{const sb=this.getMeetingSidebarView();if(sb)sb.addMomentMarker()},
           });
         }
       }
     }
 
     // Get plugin directory path for finding the Swift binary
-    const pluginDir=(this.app.vault.adapter as any).basePath+"/.obsidian/plugins/"+this.manifest.id;
+    const pluginDir=(this.app.vault.adapter as unknown as {basePath: string}).basePath+"/"+this.app.vault.configDir+"/plugins/"+this.manifest.id;
     this.meetingCapture=new SystemAudioCapture({
       onPCMData:(data)=>{
         this.meetingPcm.push(data);
@@ -313,7 +315,8 @@ export default class VoiceNotesPlugin extends Plugin {
     try{
       this.meetingMethod=await this.meetingCapture.start(config.captureMethod,this.settings.blackholeDeviceName);
       this.meetingActive=true;
-      if(this.meetingSidebar)this.meetingSidebar.startRecording(appName,this.meetingMethod);
+      const sidebar=this.getMeetingSidebarView();
+      if(sidebar)sidebar.startRecording(appName,this.meetingMethod);
       // Use longer chunk interval for meetings (min 7s) to give server time to process
       const meetingInterval=Math.max(this.settings.chunkSeconds,7)*1000;
       this.meetingCI=window.setInterval(()=>this.meetingChunk(),meetingInterval);
@@ -342,7 +345,7 @@ export default class VoiceNotesPlugin extends Plugin {
       if(t){this.meetingTexts.push(t);added=true}
       this.meetingNextFlush++;
     }
-    if(added&&this.meetingSidebar)this.meetingSidebar.updateTranscript(this.meetingTexts.join(" "));
+    if(added){const sb=this.getMeetingSidebarView();if(sb)sb.updateTranscript(this.meetingTexts.join(" "))}
   }
 
   async stopMeeting(){
@@ -357,7 +360,8 @@ export default class VoiceNotesPlugin extends Plugin {
     if(this.meetingCapture){await this.meetingCapture.stop();this.meetingCapture=null}
     this.meetingActive=false;
 
-    if(this.meetingSidebar)this.meetingSidebar.showProcessing("Processing meeting...");
+    const msb=this.getMeetingSidebarView();
+    if(msb)msb.showProcessing("Processing meeting...");
 
     try{
       const notePath=await processPostMeeting(this.app,{
@@ -365,7 +369,7 @@ export default class VoiceNotesPlugin extends Plugin {
         micPcmBuffers:this.meetingMicPcm,
         sysPcmBuffers:this.meetingSysPcm,
         transcript:this.meetingTexts.join(" "),
-        moments:this.meetingSidebar?this.meetingSidebar.getMoments():[],
+        moments:msb?msb.getMoments():[],
         appName:this.meetingAppName,
         captureMethod:this.meetingMethod,
         startTime:this.meetingT0,
@@ -380,9 +384,10 @@ export default class VoiceNotesPlugin extends Plugin {
         },
         postAction:this.meetingConfig?.postAction||this.settings.meetingPostAction,
         diarize:this.meetingConfig?.diarize||false,
-      },(msg)=>{if(this.meetingSidebar)this.meetingSidebar.showProcessing(msg)});
+      },(msg)=>{const sb=this.getMeetingSidebarView();if(sb)sb.showProcessing(msg)});
 
-      if(this.meetingSidebar)this.meetingSidebar.showComplete(notePath);
+      const sbDone=this.getMeetingSidebarView();
+      if(sbDone)sbDone.showComplete(notePath);
       const f=this.app.vault.getAbstractFileByPath(notePath);
       if(f instanceof TFile)await this.app.workspace.getLeaf("tab").openFile(f);
       new Notice("Meeting notes saved!");
@@ -402,18 +407,18 @@ class RecModal extends Modal {
 
   onOpen(){
     const c=this.contentEl;c.empty();c.addClass("vn-modal");
-    c.createEl("h2",{text:"Voice Note",cls:"vn-title"});
+    c.createEl("h2",{text:"Voice note",cls:"vn-title"});
     this.stl=c.createEl("div",{cls:"vn-status",text:"Ready to record"});
     this.tel=c.createEl("div",{cls:"vn-timer",text:"00:00"});
     const ct=c.createEl("div",{cls:"vn-ctrl"});
-    this.rb=ct.createEl("button",{cls:"vn-btn vn-rec",text:"Record"});this.rb.addEventListener("click",()=>this.go());
-    this.sb=ct.createEl("button",{cls:"vn-btn vn-stop",text:"Stop"});this.sb.style.display="none";this.sb.addEventListener("click",()=>this.end());
-    this.svb=ct.createEl("button",{cls:"vn-btn vn-save",text:"Save Transcript"});this.svb.style.display="none";this.svb.addEventListener("click",()=>this.save(false));
-    this.aib=ct.createEl("button",{cls:"vn-btn vn-ai",text:"Save as Meeting Notes"});this.aib.style.display="none";this.aib.addEventListener("click",()=>this.save(true));
+    this.rb=ct.createEl("button",{cls:"vn-btn vn-rec",text:"Record"});this.rb.addEventListener("click",()=>{void this.go()});
+    this.sb=ct.createEl("button",{cls:"vn-btn vn-stop vn-hidden",text:"Stop"});this.sb.addEventListener("click",()=>{void this.end()});
+    this.svb=ct.createEl("button",{cls:"vn-btn vn-save vn-hidden",text:"Save transcript"});this.svb.addEventListener("click",()=>{void this.save(false)});
+    this.aib=ct.createEl("button",{cls:"vn-btn vn-ai vn-hidden",text:"Save as meeting notes"});this.aib.addEventListener("click",()=>{void this.save(true)});
     c.createEl("h3",{text:"Transcript"});
     this.txl=c.createEl("div",{cls:"vn-tx",text:"Transcript appears here as you speak..."});
   }
-  onClose(){if(this.isR&&this.wn)this.wn.disconnect();if(this.ti)clearInterval(this.ti);if(this.li)clearInterval(this.li);if(this.ac)this.ac.close();if(this.str)this.str.getTracks().forEach(t=>t.stop())}
+  onClose(){if(this.isR&&this.wn)this.wn.disconnect();if(this.ti)clearInterval(this.ti);if(this.li)clearInterval(this.li);if(this.ac)void this.ac.close();if(this.str)this.str.getTracks().forEach(t=>t.stop())}
 
   async go(){
     try{
@@ -424,7 +429,7 @@ class RecModal extends Modal {
       this.wn=new AudioWorkletNode(this.ac,"pcm-processor");this.pcm=[];this.pend=[];this.ft="";this.chunkSeq=0;this.chunkResults=new Map();this.nextFlush=0;this.chunkTexts=[];this.modalDetectedLang="en";
       this.wn.port.onmessage=(e:MessageEvent)=>{const c=e.data as Float32Array;this.pcm.push(c);this.pend.push(c)};
       s.connect(this.wn);this.isR=true;this.t0=Date.now();
-      this.rb.style.display="none";this.sb.style.display="inline-block";this.stl.setText("Recording...");
+      this.rb.addClass("vn-hidden");this.sb.removeClass("vn-hidden");this.stl.setText("Recording...");
       this.ti=window.setInterval(()=>{const e=Math.floor((Date.now()-this.t0)/1000);this.tel.setText(String(Math.floor(e/60)).padStart(2,"0")+":"+String(e%60).padStart(2,"0"))},1000);
       this.li=window.setInterval(()=>this.sc(),this.pl.settings.chunkSeconds*1000);
     }catch(e){new Notice("Mic failed: "+e)}
@@ -437,8 +442,8 @@ class RecModal extends Modal {
     while(this.chunkResults.size>0&&Date.now()-waitStart<5000){await new Promise(r=>setTimeout(r,100))}
     this.flushModal();
     if(this.wn)this.wn.disconnect();if(this.str)this.str.getTracks().forEach(t=>t.stop());
-    this.sb.style.display="none";this.svb.style.display="inline-block";
-    if(this.pl.settings.aiEnabled)this.aib.style.display="inline-block";
+    this.sb.addClass("vn-hidden");this.svb.removeClass("vn-hidden");
+    if(this.pl.settings.aiEnabled)this.aib.removeClass("vn-hidden");
     if(this.pl.settings.diarizeEnabled){
       this.stl.setText("Running diarization...");await this.tf();
     }else{
@@ -493,7 +498,7 @@ class RecModal extends Modal {
     const el=Math.floor((Date.now()-this.t0)/1000);const dur=Math.floor(el/60)+"m "+(el%60)+"s";const wc=displayTx.split(/\s+/).filter((w:string)=>w).length;
     const af=this.pl.settings.audioFolder;const afn=`voice-note-${ds}-${ts}.wav`;const ap=`${af}/${afn}`;
     await ensureFolder(this.app,af);const merged=mergePCM(this.pcm);const wavBuf=pcmToWav(merged,SR);
-    await this.app.vault.adapter.writeBinary(ap,new Uint8Array(wavBuf) as any);
+    await this.app.vault.adapter.writeBinary(ap,wavBuf);
     let sum="";
     if(ai&&this.pl.settings.aiEnabled){
       this.stl.setText("Generating meeting notes...");
@@ -549,22 +554,22 @@ class VNSettingsTab extends PluginSettingTab {
       new Setting(c).setName("Provider").addDropdown(d=>d.addOption("anthropic","Anthropic (Claude)").addOption("openai","OpenAI (GPT)").addOption("ollama","Ollama (Local)").setValue(this.pl.settings.aiProvider).onChange(async v=>{this.pl.settings.aiProvider=v;await this.pl.saveSettings();this.display()}));
 
       if(this.pl.settings.aiProvider==="anthropic"){
-        new Setting(c).setName("API Key").addText(t=>{t.inputEl.type="password";t.setValue(this.pl.settings.aiApiKey).onChange(async v=>{this.pl.settings.aiApiKey=v;await this.pl.saveSettings()})});
+        new Setting(c).setName("API key").addText(t=>{t.inputEl.type="password";t.setValue(this.pl.settings.aiApiKey).onChange(async v=>{this.pl.settings.aiApiKey=v;await this.pl.saveSettings()})});
         new Setting(c).setName("Model").setDesc("e.g. claude-sonnet-4-20250514").addText(t=>t.setPlaceholder("claude-sonnet-4-20250514").setValue(this.pl.settings.aiModel).onChange(async v=>{this.pl.settings.aiModel=v;await this.pl.saveSettings()}));
         new Setting(c).setName("Base URL").setDesc("Default: https://api.anthropic.com (change for proxies or custom endpoints)").addText(t=>t.setPlaceholder("https://api.anthropic.com").setValue(this.pl.settings.aiBaseUrl).onChange(async v=>{this.pl.settings.aiBaseUrl=v;await this.pl.saveSettings()}));
       } else if(this.pl.settings.aiProvider==="openai"){
-        new Setting(c).setName("API Key").addText(t=>{t.inputEl.type="password";t.setValue(this.pl.settings.aiApiKey).onChange(async v=>{this.pl.settings.aiApiKey=v;await this.pl.saveSettings()})});
+        new Setting(c).setName("API key").addText(t=>{t.inputEl.type="password";t.setValue(this.pl.settings.aiApiKey).onChange(async v=>{this.pl.settings.aiApiKey=v;await this.pl.saveSettings()})});
         new Setting(c).setName("Model").setDesc("e.g. gpt-4o").addText(t=>t.setPlaceholder("gpt-4o").setValue(this.pl.settings.aiModel).onChange(async v=>{this.pl.settings.aiModel=v;await this.pl.saveSettings()}));
         new Setting(c).setName("Base URL").setDesc("Optional, for custom endpoints").addText(t=>t.setPlaceholder("https://api.openai.com").setValue(this.pl.settings.aiBaseUrl).onChange(async v=>{this.pl.settings.aiBaseUrl=v;await this.pl.saveSettings()}));
       } else if(this.pl.settings.aiProvider==="ollama"){
         new Setting(c).setName("Ollama URL").addText(t=>t.setPlaceholder("http://127.0.0.1:11434").setValue(this.pl.settings.aiBaseUrl).onChange(async v=>{this.pl.settings.aiBaseUrl=v;await this.pl.saveSettings()}));
         new Setting(c).setName("Model").setDesc("e.g. llama3.2, mistral").addText(t=>t.setPlaceholder("llama3.2").setValue(this.pl.settings.aiModel).onChange(async v=>{this.pl.settings.aiModel=v;await this.pl.saveSettings()}));
       }
-      new Setting(c).setName("Custom prompt").setDesc("Override default. Use {transcript} as placeholder.").addTextArea(t=>{t.inputEl.rows=4;t.inputEl.style.width="100%";t.setPlaceholder("Leave empty for default").setValue(this.pl.settings.aiCustomPrompt).onChange(async v=>{this.pl.settings.aiCustomPrompt=v;await this.pl.saveSettings()})});
+      new Setting(c).setName("Custom prompt").setDesc("Override default. Use {transcript} as placeholder.").addTextArea(t=>{t.inputEl.rows=4;t.inputEl.addClass("vn-textarea-full");t.setPlaceholder("Leave empty for default").setValue(this.pl.settings.aiCustomPrompt).onChange(async v=>{this.pl.settings.aiCustomPrompt=v;await this.pl.saveSettings()})});
     }
 
     new Setting(c).setName("Status").setHeading();
-    new Setting(c).setName("Test connection").addButton(b=>b.setButtonText("Test Server").onClick(()=>this.pl.chk()));
+    new Setting(c).setName("Test connection").addButton(b=>b.setButtonText("Test server").onClick(()=>{void this.pl.chk()}));
 
     new Setting(c).setName("Meeting mode").setHeading();
     new Setting(c).setName("Enable meeting mode").setDesc("Detect calls and transcribe system audio + mic")
@@ -593,7 +598,7 @@ class VNSettingsTab extends PluginSettingTab {
 
       const statusDiv=c.createEl("div",{cls:"vn-meeting-info"});
       statusDiv.setText("Checking audio capture...");
-      SystemAudioCapture.detectAvailableMethods(this.pl.settings.blackholeDeviceName).then(m=>{
+      void SystemAudioCapture.detectAvailableMethods(this.pl.settings.blackholeDeviceName).then(m=>{
         let status="";
         if(m.sck)status+="✅ ScreenCaptureKit available\n";
         else status+="⚠️ ScreenCaptureKit not available (requires macOS 14+)\n";
@@ -601,16 +606,16 @@ class VNSettingsTab extends PluginSettingTab {
         else status+="⚠️ BlackHole not detected — install from https://existential.audio/blackhole/\n";
         status+="ℹ️ Mic-only always available as fallback";
         statusDiv.setText(status);
-        statusDiv.style.whiteSpace="pre-line";
-      });
+        statusDiv.addClass("vn-preline");
+      }).catch(()=>{});
 
-      new Setting(c).setName("Test system audio").addButton(b=>b.setButtonText("Test Capture").onClick(async()=>{
-        const pd=(this.app.vault.adapter as any).basePath+"/.obsidian/plugins/"+this.pl.manifest.id;
+      new Setting(c).setName("Test system audio").addButton(b=>b.setButtonText("Test capture").onClick(async()=>{
+        const pd=(this.app.vault.adapter as unknown as {basePath: string}).basePath+"/"+this.app.vault.configDir+"/plugins/"+this.pl.manifest.id;
         const cap=new SystemAudioCapture({onPCMData:()=>{},onError:(e)=>new Notice("Error: "+e),onReady:()=>{}},getWorkletUrl(),pd);
         try{
           const method=await cap.start(this.pl.settings.audioCaptureMethod,this.pl.settings.blackholeDeviceName);
           new Notice("Capture works! Method: "+method);
-          setTimeout(()=>cap.stop(),1000);
+          setTimeout(()=>{void cap.stop()},1000);
         }catch(e){new Notice("Capture failed: "+e)}
       }));
     }

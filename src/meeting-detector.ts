@@ -1,4 +1,5 @@
 import {Platform} from "obsidian";
+import {exec} from "child_process";
 
 export interface DetectionResult {
   appName: string | null;
@@ -51,7 +52,6 @@ export async function detectMeetingApp(customApps: string): Promise<DetectionRes
   }
 
   try {
-    const {exec} = require("child_process") as typeof import("child_process");
     const processes = (await new Promise<string>((resolve, reject) => {
       exec("ps -eo comm= | sort -u", {timeout: 3000}, (err: Error | null, stdout: string) => {
         if (err) reject(err); else resolve(stdout);
@@ -109,7 +109,6 @@ export async function quickDetectCallApp(customApps: string): Promise<string | n
   if (!Platform.isMacOS && !Platform.isDesktop) return null;
 
   try {
-    const {exec} = require("child_process") as typeof import("child_process");
     const processes = (await new Promise<string>((resolve, reject) => {
       exec("ps -eo comm= | sort -u", {timeout: 2000}, (err: Error | null, stdout: string) => {
         if (err) reject(err); else resolve(stdout);
