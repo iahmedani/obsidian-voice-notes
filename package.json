@@ -1,6 +1,6 @@
 {
   "name": "obsidian-voice-notes-local",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Voice recording + local Whisper transcription for Obsidian",
   "main": "main.js",
   "scripts": {
