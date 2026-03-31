@@ -6,9 +6,11 @@ import {MeetingConfirmModal, MeetingConfig} from "./meeting-modal";
 import {MeetingSidebar, MEETING_SIDEBAR_TYPE} from "./meeting-sidebar";
 import {processPostMeeting} from "./post-meeting";
 import {mergePCM, f32ToB64, pcmToWav, ensureFolder} from "./audio-utils";
+import {ChunkSequencer} from "./chunk-sequencer";
 interface VNSettings {serverUrl:string;whisperModel:string;language:string;chunkSeconds:number;notesFolder:string;audioFolder:string;aiEnabled:boolean;aiProvider:string;aiApiKey:string;aiModel:string;aiBaseUrl:string;aiCustomPrompt:string;diarizeEnabled:boolean;diarizeNumSpeakers:number;translateToEnglish:boolean;meetingEnabled:boolean;audioCaptureMethod:string;blackholeDeviceName:string;meetingPostAction:string;toastDismissSeconds:number;autoOpenSidebar:boolean;markMomentEnabled:boolean;meetingApps:string}
 const DEFAULTS:VNSettings={serverUrl:"http://127.0.0.1:5678",whisperModel:"mlx-community/whisper-large-v3-turbo",language:"en",chunkSeconds:3,notesFolder:"Voice Notes",audioFolder:"Attachments/Audio",aiEnabled:false,aiProvider:"anthropic",aiApiKey:"",aiModel:"",aiBaseUrl:"",aiCustomPrompt:"",diarizeEnabled:false,diarizeNumSpeakers:0,translateToEnglish:false,meetingEnabled:false,audioCaptureMethod:"auto",blackholeDeviceName:"BlackHole 2ch",meetingPostAction:"summary",toastDismissSeconds:15,autoOpenSidebar:true,markMomentEnabled:true,meetingApps:""};
 const SR=16000;
+const MAX_PCM_SAMPLES=SR*60*30; // 30 minutes max (~115MB)
 
 function createWorkletUrl():string{
   const code=`class PCMProcessor extends AudioWorkletProcessor{process(inputs){const ch=inputs[0]?.[0];if(ch){const copy=new Float32Array(ch.length);copy.set(ch);this.port.postMessage(copy,[copy.buffer])}return true}}registerProcessor("pcm-processor",PCMProcessor);`;
@@ -23,12 +25,12 @@ export default class VoiceNotesPlugin extends Plugin {
   private isRec=false;private stream:MediaStream|null=null;private actx:AudioContext|null=null;private workletNode:AudioWorkletNode|null=null;
   private pcm:Float32Array[]=[];private pending:Float32Array[]=[];private ci:number|null=null;private sbar:HTMLElement|null=null;
   private rib:HTMLElement|null=null;private pi:number|null=null;private t0=0;
-  private chunkSeq=0;private chunkResults:Map<number,string|null>=new Map();private nextFlush=0;private fullTranscript:string[]=[];private originalTranscript:string[]=[];private detectedLang="en";
+  private chunker:ChunkSequencer|null=null;private fullTranscript:string[]=[];private originalTranscript:string[]=[];private detectedLang="en";
   private meetingActive=false;private meetingCapture:SystemAudioCapture|null=null;
-  private meetingPcm:Float32Array[]=[];private meetingMicPcm:Float32Array[]=[];private meetingSysPcm:Float32Array[]=[];private meetingPending:Float32Array[]=[];
+  private meetingPcm:Float32Array[]=[];private meetingMicPcm:Float32Array[]=[];private meetingSysPcm:Float32Array[]=[];private meetingPending:Float32Array[]=[];private meetingPcmSamples=0;
   private meetingCI:number|null=null;
-  private meetingChunkSeq=0;private meetingChunkResults:Map<number,string|null>=new Map();
-  private meetingNextFlush=0;private meetingTexts:string[]=[];private meetingT0=0;
+  private meetingChunker:ChunkSequencer|null=null;
+  private meetingTexts:string[]=[];private meetingT0=0;
   private meetingAppName:string|null=null;private meetingMethod:CaptureMethod="mic-only";
   private meetingConfig:MeetingConfig|null=null;private meetingPaused=false;
   private meetingPollInterval:number|null=null;private lastDetectedApp:string|null=null;private toastShowing=false;
@@ -75,7 +77,8 @@ export default class VoiceNotesPlugin extends Plugin {
       await this.actx.audioWorklet.addModule(getWorkletUrl());
       const src=this.actx.createMediaStreamSource(this.stream);
       this.workletNode=new AudioWorkletNode(this.actx,"pcm-processor");
-      this.pcm=[];this.pending=[];this.chunkSeq=0;this.chunkResults=new Map();this.nextFlush=0;this.fullTranscript=[];this.originalTranscript=[];this.detectedLang="en";
+      this.pcm=[];this.pending=[];this.fullTranscript=[];this.originalTranscript=[];this.detectedLang="en";
+      this.chunker=new ChunkSequencer({serverUrl:this.settings.serverUrl,language:this.settings.language,timeoutMs:10000,onText:(t)=>{this.originalTranscript.push(t);this.detectedLang=this.chunker?.detectedLanguage||"en";if(this.settings.translateToEnglish&&this.settings.aiEnabled&&this.detectedLang!=="en"){void this.translate(t,this.detectedLang).then(tr=>{this.fullTranscript.push(tr);this.ins(tr)}).catch(()=>{})}else{this.fullTranscript.push(t);this.ins(t)}}});
       this.workletNode.port.onmessage=(e:MessageEvent)=>{const c=e.data as Float32Array;this.pcm.push(c);this.pending.push(c)};
       src.connect(this.workletNode);
       this.isRec=true;this.t0=Date.now();
@@ -89,8 +92,7 @@ export default class VoiceNotesPlugin extends Plugin {
     if(this.ci){clearInterval(this.ci);this.ci=null}
     if(this.pending.length>0)this.chunk();
     const waitStart=Date.now();
-    while(this.chunkResults.size>0&&Date.now()-waitStart<5000){await new Promise(r=>setTimeout(r,100))}
-    this.flushChunks();
+    while(this.chunker?.hasPending&&Date.now()-waitStart<5000){await new Promise(r=>setTimeout(r,100))}
     if(this.workletNode){this.workletNode.disconnect();this.workletNode=null}
     if(this.actx){void this.actx.close();this.actx=null}
     if(this.stream){this.stream.getTracks().forEach(t=>t.stop());this.stream=null}
@@ -123,29 +125,7 @@ export default class VoiceNotesPlugin extends Plugin {
   private chunk(){
     if(this.pending.length===0)return;
     const bufs=[...this.pending];this.pending=[];
-    const m=mergePCM(bufs);
-    const seq=this.chunkSeq++;
-    const timeout=window.setTimeout(()=>{if(!this.chunkResults.has(seq)){this.chunkResults.set(seq,"");this.flushChunks()}},10000);
-    requestUrl({url:this.settings.serverUrl+"/transcribe",method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({audio_pcm_base64:f32ToB64(m),format:"float32",sample_rate:SR,language:this.settings.language,is_chunk:true})})
-      .then(r=>{clearTimeout(timeout);const t=(r.status===200&&r.json.text)?r.json.text.trim():"";if(r.json.detected_language)this.detectedLang=r.json.detected_language;this.chunkResults.set(seq,t);this.flushChunks()})
-      .catch(()=>{clearTimeout(timeout);this.chunkResults.set(seq,"");this.flushChunks()});
-  }
-
-  private flushChunks(){
-    while(this.chunkResults.has(this.nextFlush)){
-      const t=this.chunkResults.get(this.nextFlush)||"";
-      this.chunkResults.delete(this.nextFlush);
-      if(t){
-        this.originalTranscript.push(t);
-        if(this.settings.translateToEnglish&&this.settings.aiEnabled&&this.detectedLang!=="en"){
-          void this.translate(t,this.detectedLang).then(tr=>{this.fullTranscript.push(tr);this.ins(tr)}).catch(()=>{});
-        }else{
-          this.fullTranscript.push(t);this.ins(t);
-        }
-      }
-      this.nextFlush++;
-    }
+    this.chunker?.send(bufs);
   }
 
   private async translate(text:string,sourceLang:string):Promise<string>{
@@ -280,8 +260,8 @@ export default class VoiceNotesPlugin extends Plugin {
     this.meetingConfig=config;
     this.meetingAppName=appName;
     this.meetingPcm=[];this.meetingMicPcm=[];this.meetingSysPcm=[];this.meetingPending=[];
-    this.meetingChunkSeq=0;this.meetingChunkResults=new Map();
-    this.meetingNextFlush=0;this.meetingTexts=[];
+    this.meetingPcmSamples=0;this.meetingTexts=[];
+    this.meetingChunker=new ChunkSequencer({serverUrl:this.settings.serverUrl,language:this.settings.language,timeoutMs:60000,onText:(t)=>{this.meetingTexts.push(t);const sb=this.getMeetingSidebarView();if(sb)sb.updateTranscript(this.meetingTexts.join(" "))}});
     this.meetingT0=Date.now();this.meetingPaused=false;
 
     if(this.settings.autoOpenSidebar){
@@ -308,7 +288,7 @@ export default class VoiceNotesPlugin extends Plugin {
     const pluginDir=this.getPluginDir();
     this.meetingCapture=new SystemAudioCapture({
       onPCMData:(data)=>{
-        this.meetingPcm.push(data);
+        if(this.meetingPcmSamples<MAX_PCM_SAMPLES){this.meetingPcm.push(data);this.meetingPcmSamples+=data.length}
         if(!this.meetingPaused)this.meetingPending.push(data);
       },
       onMicData:(data)=>{if(this.meetingConfig?.diarize)this.meetingMicPcm.push(data)},
@@ -332,25 +312,7 @@ export default class VoiceNotesPlugin extends Plugin {
   private meetingChunk(){
     if(this.meetingPending.length===0||this.meetingPaused)return;
     const bufs=[...this.meetingPending];this.meetingPending=[];
-    const m=mergePCM(bufs);
-    const seq=this.meetingChunkSeq++;
-    // 60s timeout for meeting chunks — Docker CPU can take 20-40s per chunk
-    const timeout=window.setTimeout(()=>{if(!this.meetingChunkResults.has(seq)){this.meetingChunkResults.set(seq,"");this.flushMeetingChunks()}},60000);
-    requestUrl({url:this.settings.serverUrl+"/transcribe",method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({audio_pcm_base64:f32ToB64(m),format:"float32",sample_rate:SR,language:this.settings.language,is_chunk:true})})
-      .then(r=>{clearTimeout(timeout);const t=(r.status===200&&r.json.text)?r.json.text.trim():"";this.meetingChunkResults.set(seq,t);this.flushMeetingChunks()})
-      .catch(()=>{clearTimeout(timeout);this.meetingChunkResults.set(seq,"");this.flushMeetingChunks()});
-  }
-
-  private flushMeetingChunks(){
-    let added=false;
-    while(this.meetingChunkResults.has(this.meetingNextFlush)){
-      const t=this.meetingChunkResults.get(this.meetingNextFlush)||"";
-      this.meetingChunkResults.delete(this.meetingNextFlush);
-      if(t){this.meetingTexts.push(t);added=true}
-      this.meetingNextFlush++;
-    }
-    if(added){const sb=this.getMeetingSidebarView();if(sb)sb.updateTranscript(this.meetingTexts.join(" "))}
+    this.meetingChunker?.send(bufs);
   }
 
   async stopMeeting(){
@@ -359,8 +321,7 @@ export default class VoiceNotesPlugin extends Plugin {
     if(this.meetingPending.length>0)this.meetingChunk();
     await new Promise(r=>setTimeout(r,200)); // let final chunk request start
     const ws=Date.now();
-    while((this.meetingChunkResults.size>0||this.meetingNextFlush<this.meetingChunkSeq)&&Date.now()-ws<5000){await new Promise(r=>setTimeout(r,100))}
-    this.flushMeetingChunks();
+    while(this.meetingChunker?.hasPending&&Date.now()-ws<5000){await new Promise(r=>setTimeout(r,100))}
 
     if(this.meetingCapture){await this.meetingCapture.stop();this.meetingCapture=null}
     this.meetingActive=false;
@@ -405,7 +366,7 @@ class RecModal extends Modal {
   pl:VoiceNotesPlugin;private str:MediaStream|null=null;private ac:AudioContext|null=null;private wn:AudioWorkletNode|null=null;
   private pcm:Float32Array[]=[];private pend:Float32Array[]=[];private isR=false;private t0=0;
   private ti:number|null=null;private li:number|null=null;private ft="";
-  private chunkSeq=0;private chunkResults:Map<number,string|null>=new Map();private nextFlush=0;private chunkTexts:string[]=[];private modalDetectedLang="en";
+  private chunker:ChunkSequencer|null=null;private chunkTexts:string[]=[];private modalDetectedLang="en";
   private tel!:HTMLElement;private txl!:HTMLElement;private rb!:HTMLButtonElement;private sb!:HTMLButtonElement;private svb!:HTMLButtonElement;private aib!:HTMLButtonElement;private stl!:HTMLElement;
 
   constructor(app:App,pl:VoiceNotesPlugin){super(app);this.pl=pl}
@@ -431,7 +392,8 @@ class RecModal extends Modal {
       this.ac=new AudioContext({sampleRate:SR});
       await this.ac.audioWorklet.addModule(getWorkletUrl());
       const s=this.ac.createMediaStreamSource(this.str);
-      this.wn=new AudioWorkletNode(this.ac,"pcm-processor");this.pcm=[];this.pend=[];this.ft="";this.chunkSeq=0;this.chunkResults=new Map();this.nextFlush=0;this.chunkTexts=[];this.modalDetectedLang="en";
+      this.wn=new AudioWorkletNode(this.ac,"pcm-processor");this.pcm=[];this.pend=[];this.ft="";this.chunkTexts=[];this.modalDetectedLang="en";
+      this.chunker=new ChunkSequencer({serverUrl:this.pl.settings.serverUrl,language:this.pl.settings.language,timeoutMs:10000,onText:(t)=>{this.chunkTexts.push(t);this.modalDetectedLang=this.chunker?.detectedLanguage||"en";this.ft=this.chunkTexts.join(" ");this.txl.setText(this.ft);this.txl.scrollTop=this.txl.scrollHeight}});
       this.wn.port.onmessage=(e:MessageEvent)=>{const c=e.data as Float32Array;this.pcm.push(c);this.pend.push(c)};
       s.connect(this.wn);this.isR=true;this.t0=Date.now();
       this.rb.addClass("vn-hidden");this.sb.removeClass("vn-hidden");this.stl.setText("Recording...");
@@ -444,8 +406,7 @@ class RecModal extends Modal {
     this.isR=false;if(this.ti)clearInterval(this.ti);if(this.li)clearInterval(this.li);
     if(this.pend.length>0)this.sc();
     const waitStart=Date.now();
-    while(this.chunkResults.size>0&&Date.now()-waitStart<5000){await new Promise(r=>setTimeout(r,100))}
-    this.flushModal();
+    while(this.chunker?.hasPending&&Date.now()-waitStart<5000){await new Promise(r=>setTimeout(r,100))}
     if(this.wn)this.wn.disconnect();if(this.str)this.str.getTracks().forEach(t=>t.stop());
     this.sb.addClass("vn-hidden");this.svb.removeClass("vn-hidden");
     if(this.pl.settings.aiEnabled)this.aib.removeClass("vn-hidden");
@@ -459,24 +420,8 @@ class RecModal extends Modal {
   }
 
   sc(){
-    if(this.pend.length===0)return;const b=[...this.pend];this.pend=[];const m=mergePCM(b);
-    const seq=this.chunkSeq++;
-    const timeout=window.setTimeout(()=>{if(!this.chunkResults.has(seq)){this.chunkResults.set(seq,"");this.flushModal()}},10000);
-    requestUrl({url:this.pl.settings.serverUrl+"/transcribe",method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({audio_pcm_base64:f32ToB64(m),format:"float32",sample_rate:SR,language:this.pl.settings.language,is_chunk:true})})
-      .then(r=>{clearTimeout(timeout);const t=(r.status===200&&r.json.text)?r.json.text.trim():"";if(r.json.detected_language)this.modalDetectedLang=r.json.detected_language;this.chunkResults.set(seq,t);this.flushModal()})
-      .catch(()=>{clearTimeout(timeout);this.chunkResults.set(seq,"");this.flushModal()});
-  }
-
-  private flushModal(){
-    while(this.chunkResults.has(this.nextFlush)){
-      const t=this.chunkResults.get(this.nextFlush)||"";
-      this.chunkResults.delete(this.nextFlush);
-      if(t)this.chunkTexts.push(t);
-      this.nextFlush++;
-    }
-    this.ft=this.chunkTexts.join(" ");
-    this.txl.setText(this.ft);this.txl.scrollTop=this.txl.scrollHeight;
+    if(this.pend.length===0)return;const b=[...this.pend];this.pend=[];
+    this.chunker?.send(b);
   }
 
   async tf(){
@@ -614,13 +559,14 @@ class VNSettingsTab extends PluginSettingTab {
         statusDiv.addClass("vn-preline");
       }).catch(()=>{});
 
+      let testTimer:number|null=null;
       new Setting(c).setName("Test system audio").addButton(b=>b.setButtonText("Test capture").onClick(async()=>{
         const pd=this.pl.getPluginDir();
         const cap=new SystemAudioCapture({onPCMData:()=>{},onError:(e)=>new Notice("Error: "+e),onReady:()=>{}},getWorkletUrl(),pd);
         try{
           const method=await cap.start(this.pl.settings.audioCaptureMethod,this.pl.settings.blackholeDeviceName);
           new Notice("Capture works! Method: "+method);
-          setTimeout(()=>{void cap.stop()},1000);
+          testTimer=window.setTimeout(()=>{void cap.stop();testTimer=null},1000);
         }catch(e){new Notice("Capture failed: "+e)}
       }));
     }
