@@ -1,4 +1,4 @@
-import {App,MarkdownView,Modal,Notice,Plugin,PluginSettingTab,Setting,TFile,requestUrl} from "obsidian";
+import {App,FileSystemAdapter,MarkdownView,Modal,Notice,Plugin,PluginSettingTab,Setting,TFile,requestUrl} from "obsidian";
 import {detectMeetingApp, quickDetectCallApp} from "./meeting-detector";
 import {SystemAudioCapture, CaptureMethod} from "./system-audio";
 import {showMeetingToast} from "./meeting-toast";
@@ -139,7 +139,7 @@ export default class VoiceNotesPlugin extends Plugin {
       if(t){
         this.originalTranscript.push(t);
         if(this.settings.translateToEnglish&&this.settings.aiEnabled&&this.detectedLang!=="en"){
-          this.translate(t,this.detectedLang).then(tr=>{this.fullTranscript.push(tr);this.ins(tr)}).catch(()=>{});
+          void this.translate(t,this.detectedLang).then(tr=>{this.fullTranscript.push(tr);this.ins(tr)}).catch(()=>{});
         }else{
           this.fullTranscript.push(t);this.ins(t);
         }
@@ -207,6 +207,12 @@ export default class VoiceNotesPlugin extends Plugin {
   }
   private stopMeetingPoll(){
     if(this.meetingPollInterval){clearInterval(this.meetingPollInterval);this.meetingPollInterval=null}
+  }
+  getPluginDir():string{
+    if(this.app.vault.adapter instanceof FileSystemAdapter){
+      return this.app.vault.adapter.getBasePath()+"/"+this.app.vault.configDir+"/plugins/"+this.manifest.id;
+    }
+    return "";
   }
   private resolveCaptureLabel(methods:{sck:boolean;blackhole:boolean}):string{
     if(this.settings.audioCaptureMethod!=="auto")return this.settings.audioCaptureMethod;
@@ -299,8 +305,7 @@ export default class VoiceNotesPlugin extends Plugin {
       }
     }
 
-    // Get plugin directory path for finding the Swift binary
-    const pluginDir=(this.app.vault.adapter as unknown as {basePath: string}).basePath+"/"+this.app.vault.configDir+"/plugins/"+this.manifest.id;
+    const pluginDir=this.getPluginDir();
     this.meetingCapture=new SystemAudioCapture({
       onPCMData:(data)=>{
         this.meetingPcm.push(data);
@@ -610,7 +615,7 @@ class VNSettingsTab extends PluginSettingTab {
       }).catch(()=>{});
 
       new Setting(c).setName("Test system audio").addButton(b=>b.setButtonText("Test capture").onClick(async()=>{
-        const pd=(this.app.vault.adapter as unknown as {basePath: string}).basePath+"/"+this.app.vault.configDir+"/plugins/"+this.pl.manifest.id;
+        const pd=this.pl.getPluginDir();
         const cap=new SystemAudioCapture({onPCMData:()=>{},onError:(e)=>new Notice("Error: "+e),onReady:()=>{}},getWorkletUrl(),pd);
         try{
           const method=await cap.start(this.pl.settings.audioCaptureMethod,this.pl.settings.blackholeDeviceName);

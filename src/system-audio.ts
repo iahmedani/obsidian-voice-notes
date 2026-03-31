@@ -1,5 +1,5 @@
 import {Platform} from "obsidian";
-import {spawn, execSync} from "child_process";
+import {exec, spawn} from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -289,7 +289,11 @@ export class SystemAudioCapture {
 
     if (Platform.isMacOS) {
       try {
-        const ver = execSync("sw_vers -productVersion", {timeout: 2000}).toString().trim();
+        const ver = await new Promise<string>((resolve, reject) => {
+          exec("sw_vers -productVersion", {timeout: 2000}, (err, stdout) => {
+            if (err) reject(err); else resolve(stdout.trim());
+          });
+        });
         const major = parseInt(ver.split(".")[0]);
         sck = major >= 14;
       } catch { /* ignore */ }
